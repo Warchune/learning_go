@@ -27,7 +27,7 @@ func main() {
 
 func svg(w io.Writer) {
 	zmin, zmax := minmaxConv()
-	var k float64
+	var k float64 // коэффициент зависимости цвета от высоты
 
 	if math.Abs(zmin)+math.Abs(zmax) == 0 {
 		k = 255 / 0.0001
@@ -46,8 +46,9 @@ func svg(w io.Writer) {
 			if math.IsNaN(ax) || math.IsNaN(ay) || math.IsNaN(bx) || math.IsNaN(by) || math.IsNaN(cx) || math.IsNaN(cy) || math.IsNaN(dx) || math.IsNaN(dy) {
 				continue
 			}
-			fmt.Fprintf(w, "<polygon style='stroke: #%s; fill: #%s' points='%g,%g %g,%g %g,%g %g,%g'/>\n",
-				color(i, j, k), color(i, j, k), ax, ay, bx, by, cx, cy, dx, dy)
+
+			fmt.Fprintf(w, "<polygon style='stroke: #%s; fill: #%[1]s' points='%g,%g %g,%g %g,%g %g,%g'/>\n",
+				color(i, j, k), ax, ay, bx, by, cx, cy, dx, dy)
 		}
 	}
 	fmt.Fprintln(w, "</svg>")
@@ -55,15 +56,14 @@ func svg(w io.Writer) {
 
 // minmax возвращает минимальное и максимальное значения для z с учетом минимального/максимального значения x
 // и y и предполагая квадратную область.
-func minmaxConv() (min float64, max float64) {
-	min = math.NaN()
-	max = math.NaN()
+func minmaxConv() (float64, float64) {
+	min, max := math.NaN(), math.NaN()
 	for i := 0; i < cells; i++ {
 		for j := 0; j < cells; j++ {
-			minmaxPoligon(i, j, &min, &max)
+			min, max = minmaxPoligon(i, j)
 		}
 	}
-	return
+	return min, max
 }
 
 func corner(i, j int) (float64, float64) {
@@ -81,46 +81,47 @@ func corner(i, j int) (float64, float64) {
 }
 
 func color(i, j int, k float64) string {
-	var hexColor, color string
-	var err error
-	min := math.NaN()
-	max := math.NaN()
-	minmaxPoligon(i, j, &min, &max)
+	var hex, color string
+	min, max := minmaxPoligon(i, j)
 	if math.Abs(max) > math.Abs(min) {
-		intHexColor := int(math.Abs(min * k / 4))
-		if intHexColor > 255 {
-			intHexColor = 255
-		}
-		hexColor, err = ConvertInt(strconv.Itoa(intHexColor), 10, 16)
-		if err != nil {
-			log.Fatal(err)
-		}
-		color = fmt.Sprintf("%02s0000", hexColor)
+		hex = colorDependheight(min, k)
+		color = fmt.Sprintf("%02s0000", hex)
 	} else {
-		intHexColor := int(math.Abs(max * k))
-		hexColor, err = ConvertInt(strconv.Itoa(intHexColor), 10, 16)
-		if err != nil {
-			log.Fatal(err)
-		}
-		color = fmt.Sprintf("0000%02s", hexColor)
+		hex = colorDependheight(max, k)
+		color = fmt.Sprintf("0000%02s", hex)
 	}
 	return color
 }
 
-func minmaxPoligon(i int, j int, min *float64, max *float64) {
+func colorDependheight(height, k float64) string {
+	var hex string
+	dechex := int(math.Abs(height) * k / 4)
+	if dechex > 255 {
+		dechex = 255
+	}
+	hex, err := dec2hex(int(dechex))
+	if err != nil {
+		log.Fatal(err)
+	}
+	return hex
+}
+
+func minmaxPoligon(i int, j int) (float64, float64) {
+	min, max := math.NaN(), math.NaN()
 	for xoff := 0; xoff <= 1; xoff++ {
 		for yoff := 0; yoff <= 1; yoff++ {
 			x := xyrange * (float64(i+xoff)/cells - 0.5)
 			y := xyrange * (float64(j+yoff)/cells - 0.5)
 			z := f(x, y)
-			if math.IsNaN(*min) || z < *min {
-				*min = z
+			if math.IsNaN(min) || z < min {
+				min = z
 			}
-			if math.IsNaN(*max) || z > *max {
-				*max = z
+			if math.IsNaN(max) || z > max {
+				max = z
 			}
 		}
 	}
+	return min, max
 }
 
 func f(x, y float64) float64 {
@@ -128,10 +129,11 @@ func f(x, y float64) float64 {
 	return math.Sin(r) / r
 }
 
-func ConvertInt(val string, base, toBase int) (string, error) {
-	i, err := strconv.ParseInt(val, base, 64)
+func dec2hex(val int) (string, error) {
+	sval := strconv.Itoa(val)
+	i, err := strconv.ParseInt(sval, 10, 64)
 	if err != nil {
 		return "", err
 	}
-	return strconv.FormatInt(i, toBase), nil
+	return strconv.FormatInt(i, 16), nil
 }
